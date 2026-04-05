@@ -49,15 +49,13 @@ enum ScreenCapture {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
 
-        if let windowID = frontmostWindowID() {
-            // Capture just the frontmost window: -l windowID, -o no shadow, -x no sound
-            process.arguments = ["-l", "\(windowID)", "-o", "-x", path.path]
-            print("Capturing window \(windowID)")
-        } else {
-            // Full screen fallback: -x no sound
-            process.arguments = ["-x", path.path]
-            print("Capturing full screen (no frontmost window)")
+        guard let windowID = frontmostWindowID() else {
+            throw CaptureError.noWindow
         }
+
+        // Capture just the frontmost window: -l windowID, -o no shadow, -x no sound
+        process.arguments = ["-l", "\(windowID)", "-o", "-x", path.path]
+        print("Capturing window \(windowID)")
 
         try process.run()
         process.waitUntilExit()
@@ -88,12 +86,15 @@ enum ScreenCapture {
 
 enum CaptureError: LocalizedError {
     case screencaptureFailed
+    case noWindow
     case rsyncFailed(String)
 
     var errorDescription: String? {
         switch self {
         case .screencaptureFailed:
             return "Screenshot failed. Grant Screen Recording permission in System Settings."
+        case .noWindow:
+            return "No window to capture"
         case .rsyncFailed(let msg):
             return "rsync failed: \(msg)"
         }
