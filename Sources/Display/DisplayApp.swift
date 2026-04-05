@@ -8,8 +8,32 @@ struct DisplayApp: App {
     @State private var watcher: Watcher?
 
     init() {
+        Self.loadDotEnv()
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    /// Load KEY=VALUE lines from ~/.env if it exists
+    private static func loadDotEnv() {
+        let path = NSString("~/.env").expandingTildeInPath
+        guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        for line in contents.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+            let parts = trimmed.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let key = parts[0].trimmingCharacters(in: .whitespaces)
+            var value = parts[1].trimmingCharacters(in: .whitespaces)
+            // Strip surrounding quotes
+            if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
+               (value.hasPrefix("'") && value.hasSuffix("'")) {
+                value = String(value.dropFirst().dropLast())
+            }
+            // Don't override existing env vars
+            if ProcessInfo.processInfo.environment[key] == nil {
+                setenv(key, value, 0)
+            }
+        }
     }
 
     var body: some Scene {
