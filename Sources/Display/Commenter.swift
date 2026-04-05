@@ -37,7 +37,7 @@ enum Commenter {
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
 
         let body: [String: Any] = [
-            "model": "claude-sonnet-4-20250514",
+            "model": "claude-opus-4-20250514",
             "max_tokens": 1024,
             "system": systemPrompt,
             "messages": [
