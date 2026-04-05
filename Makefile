@@ -16,6 +16,7 @@ capture: build
 
 ## display: Build and run the display side (Mac Mini)
 display: build
+	@mkdir -p ~/screenshots
 	.build/release/Display $(ARGS)
 
 ## lint: Check for warnings and errors

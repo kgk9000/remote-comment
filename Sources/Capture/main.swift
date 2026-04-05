@@ -15,6 +15,14 @@ struct CaptureMain {
         print("  interval: \(interval)s")
         print("  remote dir: \(remoteDir)")
 
+        // Ensure remote directory exists
+        do {
+            try ensureRemoteDir(host: host, dir: remoteDir)
+            print("Remote directory ready")
+        } catch {
+            print("Warning: could not create remote dir: \(error.localizedDescription)")
+        }
+
         var lastFeaturePrint: VNFeaturePrintObservation?
 
         while true {
@@ -70,6 +78,17 @@ struct CaptureMain {
         if process.terminationStatus != 0 {
             let stderr = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
             throw CaptureError.rsyncFailed(stderr)
+        }
+    }
+
+    static func ensureRemoteDir(host: String, dir: String) throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        process.arguments = [host, "mkdir", "-p", dir]
+        try process.run()
+        process.waitUntilExit()
+        if process.terminationStatus != 0 {
+            throw CaptureError.rsyncFailed("ssh mkdir failed")
         }
     }
 
