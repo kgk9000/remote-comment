@@ -85,58 +85,7 @@ enum ScreenCapture {
         return imagePath
     }
 
-    /// Run OCR on an image and return all recognized text.
-    /// Groups text fragments on the same line, preserving code layout.
-    static func recognizeText(in cgImage: CGImage) -> String {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
 
-        let handler = VNImageRequestHandler(cgImage: cgImage)
-        try? handler.perform([request])
-
-        guard let observations = request.results, !observations.isEmpty else { return "" }
-
-        // Each observation has a bounding box in normalized coordinates (0-1).
-        // Group fragments whose vertical centers are close enough to be on the same line.
-        // Use the average height of observations as the threshold.
-        let avgHeight = observations.map { $0.boundingBox.height }.reduce(0, +) / Float(observations.count)
-        let lineThreshold = avgHeight * 0.5
-
-        struct Fragment {
-            let text: String
-            let x: CGFloat
-            let y: CGFloat  // vertical center
-        }
-
-        let fragments = observations.compactMap { obs -> Fragment? in
-            guard let text = obs.topCandidates(1).first?.string else { return nil }
-            let box = obs.boundingBox
-            return Fragment(
-                text: text,
-                x: CGFloat(box.origin.x),
-                y: CGFloat(box.origin.y + box.height / 2)
-            )
-        }
-
-        // Sort by Y descending (top of screen first), then group into lines.
-        let sortedByY = fragments.sorted { $0.y > $1.y }
-        var lines: [[Fragment]] = []
-        for frag in sortedByY {
-            if let lastIdx = lines.lastIndex(where: {
-                abs($0[0].y - frag.y) < CGFloat(lineThreshold)
-            }) {
-                lines[lastIdx].append(frag)
-            } else {
-                lines.append([frag])
-            }
-        }
-
-        // Within each line, sort left-to-right and join with spaces.
-        return lines.map { line in
-            line.sorted { $0.x < $1.x }.map(\.text).joined(separator: " ")
-        }.joined(separator: "\n")
-    }
 
     static func featurePrint(for imageURL: URL) -> VNFeaturePrintObservation? {
         let request = VNGenerateImageFeaturePrintRequest()
