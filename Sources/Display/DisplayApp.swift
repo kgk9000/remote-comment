@@ -15,6 +15,12 @@ struct DisplayApp: App {
     }
 
     private func startWatching() {
+        if ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] == nil {
+            status = "⚠️ ANTHROPIC_API_KEY not set"
+            print("Error: ANTHROPIC_API_KEY environment variable is not set")
+            return
+        }
+
         let args = CommandLine.arguments
         let dir = flag(args, name: "--dir")
             ?? ProcessInfo.processInfo.environment["SCREENSHOT_DIR"]
