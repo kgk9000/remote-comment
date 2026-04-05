@@ -3,8 +3,6 @@ import Foundation
 import Vision
 
 enum ScreenCapture {
-    /// Claude's vision API downscales anything over 1568px on the long edge.
-    static let maxDimension: CGFloat = 1568
     static let maxImageBytes = 5 * 1024 * 1024  // 5MB API limit
     static let similarityThreshold: Float = 0.05
 
@@ -17,9 +15,8 @@ enum ScreenCapture {
         return false
     }
 
-    /// Find the window ID of the frontmost application's main window.
-    /// Returns nil if no suitable window is found.
-    static func frontmostWindowID() -> CGWindowID? {
+    /// Find the frontmost app's main window. Returns its ID and bounds.
+    static func frontmostWindow() -> (id: CGWindowID, bounds: CGRect)? {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
         let pid = frontApp.processIdentifier
 
@@ -28,36 +25,35 @@ enum ScreenCapture {
             kCGNullWindowID
         ) as? [[String: Any]] else { return nil }
 
-        // Find the first on-screen window belonging to the frontmost app.
         for info in windowList {
             guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int32,
                   ownerPID == pid,
                   let windowID = info[kCGWindowNumber as String] as? CGWindowID,
-                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
-                  let w = bounds["Width"] as? CGFloat,
-                  let h = bounds["Height"] as? CGFloat,
-                  w > 100 && h > 100  // skip tiny windows (toolbars, popovers)
+                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let x = boundsDict["X"] as? CGFloat,
+                  let y = boundsDict["Y"] as? CGFloat,
+                  let w = boundsDict["Width"] as? CGFloat,
+                  let h = boundsDict["Height"] as? CGFloat,
+                  w > 100 && h > 100
             else { continue }
-            return windowID
+            return (id: windowID, bounds: CGRect(x: x, y: y, width: w, height: h))
         }
         return nil
     }
 
-    /// Capture a screenshot. Takes a full-screen image for visual context, and
-    /// OCRs just the frontmost window for accurate code reading.
+    /// Capture the frontmost window as a PNG. Falls back to full screen.
     static func takeScreenshot(to directory: URL) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let timestamp = Int(Date().timeIntervalSince1970)
 
-        // Capture the frontmost window for both the image and OCR.
-        // Falls back to full screen if no frontmost window is found.
         let capturedImage: CGImage
-        if let windowID = frontmostWindowID(),
+
+        if let window = frontmostWindow(),
            let windowImage = CGWindowListCreateImage(
-               CGRect.null,
+               window.bounds,
                .optionIncludingWindow,
-               windowID,
-               [.bestResolution, .boundsIgnoreFraming]
+               window.id,
+               [.bestResolution]
            ) {
             capturedImage = windowImage
             print("Captured frontmost window (\(windowImage.width)x\(windowImage.height))")
@@ -73,19 +69,26 @@ enum ScreenCapture {
             throw CaptureError.screencaptureFailed
         }
 
-        // Save as high-quality PNG — lossless so Claude can read code text.
+        // Try PNG first (lossless, best for code). Fall back to JPEG if over 5MB.
         let bitmapRep = NSBitmapImageRep(cgImage: capturedImage)
-        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
-            throw CaptureError.screencaptureFailed
+        let pngData = bitmapRep.representation(using: .png, properties: [:])
+
+        if let pngData, pngData.count <= maxImageBytes {
+            let path = directory.appendingPathComponent("screenshot_\(timestamp).png")
+            try pngData.write(to: path)
+            print("Saved PNG (\(pngData.count / 1024)KB)")
+            return path
         }
 
-        let imagePath = directory.appendingPathComponent("screenshot_\(timestamp).png")
-        try pngData.write(to: imagePath)
-
-        return imagePath
+        // PNG too big — use JPEG.
+        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+            throw CaptureError.screencaptureFailed
+        }
+        let path = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
+        try jpegData.write(to: path)
+        print("Saved JPEG (\(jpegData.count / 1024)KB)")
+        return path
     }
-
-
 
     static func featurePrint(for imageURL: URL) -> VNFeaturePrintObservation? {
         let request = VNGenerateImageFeaturePrintRequest()
