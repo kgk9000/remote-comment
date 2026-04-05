@@ -49,18 +49,9 @@ enum ScreenCapture {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let timestamp = Int(Date().timeIntervalSince1970)
 
-        // Full-screen capture for the image sent to Claude as visual context.
-        guard let fullScreen = CGWindowListCreateImage(
-            CGRect.null,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.bestResolution]
-        ) else {
-            throw CaptureError.screencaptureFailed
-        }
-
-        // OCR just the frontmost window for clean text extraction.
-        let ocrText: String
+        // Capture the frontmost window for both the image and OCR.
+        // Falls back to full screen if no frontmost window is found.
+        let capturedImage: CGImage
         if let windowID = frontmostWindowID(),
            let windowImage = CGWindowListCreateImage(
                CGRect.null,
@@ -68,20 +59,27 @@ enum ScreenCapture {
                windowID,
                [.bestResolution, .boundsIgnoreFraming]
            ) {
-            ocrText = recognizeText(in: windowImage)
-            print("OCR: frontmost window (\(windowImage.width)x\(windowImage.height))")
+            capturedImage = windowImage
+            print("Captured frontmost window (\(windowImage.width)x\(windowImage.height))")
+        } else if let fullScreen = CGWindowListCreateImage(
+            CGRect.null,
+            .optionOnScreenOnly,
+            kCGNullWindowID,
+            [.bestResolution]
+        ) {
+            capturedImage = fullScreen
+            print("Captured full screen (no frontmost window found)")
         } else {
-            // Fall back to full-screen OCR if we can't get the window.
-            ocrText = recognizeText(in: fullScreen)
-            print("OCR: full screen (no frontmost window found)")
+            throw CaptureError.screencaptureFailed
         }
 
+        // OCR the captured image.
+        let ocrText = recognizeText(in: capturedImage)
         let txtPath = directory.appendingPathComponent("screenshot_\(timestamp).txt")
         try ocrText.write(to: txtPath, atomically: true, encoding: .utf8)
 
-        // Save full-res as JPEG directly — no resize needed.
-        // Claude downscales internally, and the image is just for visual context.
-        let bitmapRep = NSBitmapImageRep(cgImage: fullScreen)
+        // Save as JPEG.
+        let bitmapRep = NSBitmapImageRep(cgImage: capturedImage)
         guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.70]) else {
             throw CaptureError.screencaptureFailed
         }
