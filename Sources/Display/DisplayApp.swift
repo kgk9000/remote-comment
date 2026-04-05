@@ -8,124 +8,140 @@ struct DisplayApp: App {
 
     init() {
         Self.loadDotEnv()
+        // Required to show a window when launched as a bare CLI executable.
         NSApplication.shared.setActivationPolicy(.regular)
         NSApplication.shared.activate(ignoringOtherApps: true)
-    }
-
-    /// Load KEY=VALUE lines from all *.env files in ~/.env/
-    private static func loadDotEnv() {
-        let envDir = URL(fileURLWithPath: NSString("~/.env").expandingTildeInPath)
-        guard let files = try? FileManager.default.contentsOfDirectory(at: envDir, includingPropertiesForKeys: nil) else { return }
-        for file in files where file.pathExtension == "env" {
-            guard let contents = try? String(contentsOf: file, encoding: .utf8) else { continue }
-            for line in contents.components(separatedBy: .newlines) {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-                let parts = trimmed.split(separator: "=", maxSplits: 1)
-                guard parts.count == 2 else { continue }
-                let key = parts[0].trimmingCharacters(in: .whitespaces)
-                var value = parts[1].trimmingCharacters(in: .whitespaces)
-                if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
-                   (value.hasPrefix("'") && value.hasSuffix("'")) {
-                    value = String(value.dropFirst().dropLast())
-                }
-                if ProcessInfo.processInfo.environment[key] == nil {
-                    setenv(key, value, 0)
-                }
-            }
-        }
     }
 
     var body: some Scene {
         WindowGroup {
             CommentView(comment: comment, status: status)
-                .onAppear { startWatching() }
+                .onAppear { startPolling() }
         }
         .windowResizability(.contentSize)
     }
 
-    private func startWatching() {
-        if getenv("ANTHROPIC_API_KEY") == nil {
+    // MARK: - Screenshot polling
+
+    /// Main loop: find new screenshots, send each to Claude, display the result.
+    private func startPolling() {
+        guard getenv("ANTHROPIC_API_KEY") != nil else {
             status = "⚠️ ANTHROPIC_API_KEY not set"
             print("Error: ANTHROPIC_API_KEY environment variable is not set")
             return
         }
 
-        let args = CommandLine.arguments
-        let dir = flag(args, name: "--dir")
-            ?? ProcessInfo.processInfo.environment["SCREENSHOT_DIR"]
-            ?? NSString("~/screenshots").expandingTildeInPath
-
+        let dir = resolveScreenshotDir()
         let dirURL = URL(fileURLWithPath: dir)
         try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
 
         status = "Watching \(dir)"
         print("Watching \(dir)")
 
-        // Single loop: poll for new files and send to Claude
         Task {
             var seen = Set<String>()
 
-            // Process the most recent existing image on startup
-            if let files = try? FileManager.default.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil) {
-                let jpgs = files.filter { $0.pathExtension == "jpg" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-                for f in jpgs { seen.insert(f.lastPathComponent) }
-                print("Found \(jpgs.count) existing files")
+            // On startup, process the most recent existing screenshot immediately.
+            let existing = listJpgs(in: dirURL)
+            for f in existing { seen.insert(f.lastPathComponent) }
+            print("Found \(existing.count) existing files")
 
-                if let latest = jpgs.last {
-                    print("Processing latest: \(latest.lastPathComponent)")
-                    await MainActor.run { self.status = "Asking Claude..." }
-                    do {
-                        let c = try await Commenter.comment(on: latest)
-                        await MainActor.run {
-                            self.comment = c
-                            self.status = "Watching \(dir)"
-                        }
-                        print("Comment received")
-                    } catch {
-                        await MainActor.run { self.status = "Error: \(error.localizedDescription)" }
-                        print("Comment error: \(error)")
-                    }
-                }
+            if let latest = existing.last {
+                await processScreenshot(latest, dir: dir)
             }
 
-            // Then watch for new arrivals
+            // Poll for new arrivals.
             while true {
                 try? await Task.sleep(for: .seconds(2))
 
-                guard let files = try? FileManager.default.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil)
-                else { continue }
+                let all = listJpgs(in: dirURL)
+                let unseen = all.filter { !seen.contains($0.lastPathComponent) }
+                guard let newest = unseen.last else { continue }
 
-                let newFiles = files
-                    .filter { $0.pathExtension == "jpg" && !seen.contains($0.lastPathComponent) }
-                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+                // Mark all unseen as processed so we skip straight to the latest.
+                for f in unseen { seen.insert(f.lastPathComponent) }
+                print("New image: \(newest.lastPathComponent) (+\(unseen.count - 1) skipped)")
 
-                guard let newest = newFiles.last else { continue }
-
-                print("New image: \(newest.lastPathComponent) (+\(newFiles.count - 1) others)")
-                for f in newFiles { seen.insert(f.lastPathComponent) }
-
-                await MainActor.run { self.status = "Asking Claude..." }
-
-                do {
-                    let c = try await Commenter.comment(on: newest)
-                    await MainActor.run {
-                        self.comment = c
-                        self.status = "Watching \(dir)"
-                    }
-                    print("Comment received")
-                } catch {
-                    await MainActor.run {
-                        self.status = "Error: \(error.localizedDescription)"
-                    }
-                    print("Comment error: \(error)")
-                }
+                await processScreenshot(newest, dir: dir)
             }
         }
+    }
+
+    /// Send a screenshot to Claude and update the UI with the comment.
+    private func processScreenshot(_ imageURL: URL, dir: String) async {
+        await MainActor.run { self.status = "Asking Claude..." }
+        do {
+            let c = try await Commenter.comment(on: imageURL)
+            await MainActor.run {
+                self.comment = c
+                self.status = "Watching \(dir)"
+            }
+            print("Comment received")
+        } catch {
+            await MainActor.run {
+                self.status = "Error: \(error.localizedDescription)"
+            }
+            print("Comment error: \(error)")
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// List all .jpg files in a directory, sorted chronologically by filename.
+    /// Filenames embed a unix timestamp (screenshot_1234567890.jpg) so
+    /// lexicographic order == chronological order.
+    private func listJpgs(in dir: URL) -> [URL] {
+        (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "jpg" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            ?? []
+    }
+
+    /// Resolve the screenshot directory from CLI args, env, or default.
+    private func resolveScreenshotDir() -> String {
+        let args = CommandLine.arguments
+        return flag(args, name: "--dir")
+            ?? ProcessInfo.processInfo.environment["SCREENSHOT_DIR"]
+            ?? NSString("~/screenshots").expandingTildeInPath
     }
 
     private func flag(_ args: [String], name: String) -> String? {
         guard let idx = args.firstIndex(of: name), idx + 1 < args.count else { return nil }
         return args[idx + 1]
+    }
+
+    // MARK: - Environment loading
+
+    /// Load KEY=VALUE lines from all *.env files in ~/.env/.
+    /// Won't override variables already set in the environment.
+    private static func loadDotEnv() {
+        let envDir = URL(fileURLWithPath: NSString("~/.env").expandingTildeInPath)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: envDir, includingPropertiesForKeys: nil
+        ) else { return }
+
+        for file in files where file.pathExtension == "env" {
+            guard let contents = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for line in contents.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+
+                let parts = trimmed.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { continue }
+
+                let key = parts[0].trimmingCharacters(in: .whitespaces)
+                var value = parts[1].trimmingCharacters(in: .whitespaces)
+
+                // Strip surrounding quotes ("val" or 'val' → val)
+                if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
+                   (value.hasPrefix("'") && value.hasSuffix("'")) {
+                    value = String(value.dropFirst().dropLast())
+                }
+
+                if ProcessInfo.processInfo.environment[key] == nil {
+                    setenv(key, value, 0)
+                }
+            }
+        }
     }
 }
