@@ -79,37 +79,28 @@ enum ScreenCapture {
         let txtPath = directory.appendingPathComponent("screenshot_\(timestamp).txt")
         try ocrText.write(to: txtPath, atomically: true, encoding: .utf8)
 
-        // Downscale full-screen image for visual context.
+        // Downscale full-screen image for visual context using NSImage.
         let width = CGFloat(fullScreen.width)
         let height = CGFloat(fullScreen.height)
         let scale = min(maxDimension / width, maxDimension / height, 1.0)
         let newWidth = Int(width * scale)
         let newHeight = Int(height * scale)
 
-        guard let colorSpace = fullScreen.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
-              let ctx = CGContext(
-                  data: nil,
-                  width: newWidth,
-                  height: newHeight,
-                  bitsPerComponent: 8,
-                  bytesPerRow: 0,
-                  space: colorSpace,
-                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-              ) else {
-            throw CaptureError.screencaptureFailed
-        }
-        ctx.interpolationQuality = .high
-        ctx.draw(fullScreen, in: CGRect(x: 0, y: 0, width: newWidth, height: newHeight))
+        let nsImage = NSImage(cgImage: fullScreen, size: NSSize(width: width, height: height))
+        let resized = NSImage(size: NSSize(width: newWidth, height: newHeight))
+        resized.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        nsImage.draw(in: NSRect(x: 0, y: 0, width: newWidth, height: newHeight))
+        resized.unlockFocus()
 
-        guard let resizedImage = ctx.makeImage() else {
+        guard let tiffData = resized.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData),
+              let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.80])
+        else {
             throw CaptureError.screencaptureFailed
         }
 
-        let bitmapRep = NSBitmapImageRep(cgImage: resizedImage)
         let imagePath = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
-        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.80]) else {
-            throw CaptureError.screencaptureFailed
-        }
         try jpegData.write(to: imagePath)
 
         return imagePath
