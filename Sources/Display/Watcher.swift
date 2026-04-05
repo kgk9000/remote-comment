@@ -16,10 +16,14 @@ final class Watcher {
     func start() {
         // Seed with existing files so we don't process old ones
         if let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
-            for f in files where f.pathExtension == "jpg" {
+            let jpgs = files.filter { $0.pathExtension == "jpg" }
+            for f in jpgs {
                 seen.insert(f.lastPathComponent)
             }
+            print("Watcher: seeded \(jpgs.count) existing files")
         }
+
+        print("Watcher: polling \(directory.path) every 2s")
 
         // Poll every 2 seconds for new files
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
@@ -45,6 +49,7 @@ final class Watcher {
             }
 
         if let newest = jpgs.last {
+            print("Watcher: new image! \(newest.lastPathComponent) (+\(jpgs.count - 1) others)")
             for f in jpgs { seen.insert(f.lastPathComponent) }
             DispatchQueue.main.async {
                 self.latestImage = newest
