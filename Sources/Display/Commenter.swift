@@ -9,7 +9,7 @@ struct Comment {
 enum Commenter {
 
     static func comment(on imageURL: URL) async throws -> Comment {
-        guard let apiKey = ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] else {
+        guard let cStr = getenv("ANTHROPIC_API_KEY"), let apiKey = String(validatingUTF8: cStr) else {
             throw CommentError.noApiKey
         }
 

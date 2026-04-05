@@ -13,25 +13,28 @@ struct DisplayApp: App {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
-    /// Load KEY=VALUE lines from ~/.env if it exists
+    /// Load KEY=VALUE lines from all *.env files in ~/.env/
     private static func loadDotEnv() {
-        let path = NSString("~/.env").expandingTildeInPath
-        guard let contents = try? String(contentsOfFile: path, encoding: .utf8) else { return }
-        for line in contents.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
-            let parts = trimmed.split(separator: "=", maxSplits: 1)
-            guard parts.count == 2 else { continue }
-            let key = parts[0].trimmingCharacters(in: .whitespaces)
-            var value = parts[1].trimmingCharacters(in: .whitespaces)
-            // Strip surrounding quotes
-            if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
-               (value.hasPrefix("'") && value.hasSuffix("'")) {
-                value = String(value.dropFirst().dropLast())
-            }
-            // Don't override existing env vars
-            if ProcessInfo.processInfo.environment[key] == nil {
-                setenv(key, value, 0)
+        let envDir = URL(fileURLWithPath: NSString("~/.env").expandingTildeInPath)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: envDir, includingPropertiesForKeys: nil) else { return }
+        for file in files where file.pathExtension == "env" {
+            guard let contents = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            for line in contents.components(separatedBy: .newlines) {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }
+                let parts = trimmed.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2 else { continue }
+                let key = parts[0].trimmingCharacters(in: .whitespaces)
+                var value = parts[1].trimmingCharacters(in: .whitespaces)
+                // Strip surrounding quotes
+                if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
+                   (value.hasPrefix("'") && value.hasSuffix("'")) {
+                    value = String(value.dropFirst().dropLast())
+                }
+                // Don't override existing env vars
+                if ProcessInfo.processInfo.environment[key] == nil {
+                    setenv(key, value, 0)
+                }
             }
         }
     }
@@ -45,7 +48,7 @@ struct DisplayApp: App {
     }
 
     private func startWatching() {
-        if ProcessInfo.processInfo.environment["ANTHROPIC_API_KEY"] == nil {
+        if getenv("ANTHROPIC_API_KEY") == nil {
             status = "⚠️ ANTHROPIC_API_KEY not set"
             print("Error: ANTHROPIC_API_KEY environment variable is not set")
             return
