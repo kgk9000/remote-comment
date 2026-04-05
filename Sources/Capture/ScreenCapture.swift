@@ -73,19 +73,14 @@ enum ScreenCapture {
             throw CaptureError.screencaptureFailed
         }
 
-        // OCR the captured image.
-        let ocrText = recognizeText(in: capturedImage)
-        let txtPath = directory.appendingPathComponent("screenshot_\(timestamp).txt")
-        try ocrText.write(to: txtPath, atomically: true, encoding: .utf8)
-
-        // Save as JPEG.
+        // Save as high-quality PNG — lossless so Claude can read code text.
         let bitmapRep = NSBitmapImageRep(cgImage: capturedImage)
-        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.70]) else {
+        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
             throw CaptureError.screencaptureFailed
         }
 
-        let imagePath = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
-        try jpegData.write(to: imagePath)
+        let imagePath = directory.appendingPathComponent("screenshot_\(timestamp).png")
+        try pngData.write(to: imagePath)
 
         return imagePath
     }

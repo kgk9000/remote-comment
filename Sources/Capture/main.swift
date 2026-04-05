@@ -54,17 +54,12 @@ struct CaptureMain {
                 //     lastFeaturePrint = fp
                 // }
 
-                // rsync image first, then OCR text.
-                // Display triggers on .txt, so by the time it sees the text
-                // file, the image is already there.
-                let txtFile = screenshot.deletingPathExtension().appendingPathExtension("txt")
+                // rsync the image to the Mac Mini.
                 try rsync(files: [screenshot], host: host, remoteDir: remoteDir)
-                try rsync(files: [txtFile], host: host, remoteDir: remoteDir)
                 print("Sent to \(host):\(remoteDir)/")
 
-                // Clean up local files
+                // Clean up local file
                 try? FileManager.default.removeItem(at: screenshot)
-                try? FileManager.default.removeItem(at: txtFile)
             } catch {
                 print("Error: \(error.localizedDescription)")
             }

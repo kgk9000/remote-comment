@@ -87,16 +87,13 @@ struct DisplayApp: App {
 
     // MARK: - Helpers
 
-    /// List completed screenshots by looking for .txt OCR files.
-    /// Capture sends the image first, then the .txt, and waits for each to finish.
-    /// So if the .txt is here, the image is guaranteed to be here too.
-    /// Returns the corresponding image URLs (.txt → .jpg).
+    /// List screenshot image files, sorted chronologically by filename.
     private func listScreenshots(in dir: URL) -> [URL] {
-        let txtFiles = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
-            .filter { $0.pathExtension == "txt" && $0.lastPathComponent.hasPrefix("screenshot_") }
+        let imageExts: Set<String> = ["png", "jpg"]
+        return (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
+            .filter { imageExts.contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             ?? []
-        return txtFiles.map { $0.deletingPathExtension().appendingPathExtension("jpg") }
     }
 
     /// Resolve the screenshot directory from CLI args, env, or default.
