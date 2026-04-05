@@ -3,8 +3,10 @@ import Foundation
 import Vision
 
 enum ScreenCapture {
-    static let maxImageBytes = 4 * 1024 * 1024
-    static let maxDimension: CGFloat = 1920
+    /// Claude's vision API downscales anything over 1568px on the long edge,
+    /// so there's no benefit to sending larger images.
+    static let maxDimension: CGFloat = 1568
+    static let maxImageBytes = 5 * 1024 * 1024  // 5MB API limit
     static let similarityThreshold: Float = 0.05
 
     static func isScreenLocked() -> Bool {
@@ -16,10 +18,12 @@ enum ScreenCapture {
         return false
     }
 
+    /// Capture a screenshot, resize to fit Claude's vision limits, and save as PNG.
+    /// PNG is lossless — much better than JPEG for reading code text.
     static func takeScreenshot(to directory: URL) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let timestamp = Int(Date().timeIntervalSince1970)
-        let jpegPath = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
+        let pngPath = directory.appendingPathComponent("screenshot_\(timestamp).png")
 
         guard let cgImage = CGWindowListCreateImage(
             CGRect.null,
@@ -30,6 +34,7 @@ enum ScreenCapture {
             throw CaptureError.screencaptureFailed
         }
 
+        // Scale down to maxDimension on the long edge.
         let width = CGFloat(cgImage.width)
         let height = CGFloat(cgImage.height)
         let scale = min(maxDimension / width, maxDimension / height, 1.0)
@@ -56,21 +61,22 @@ enum ScreenCapture {
         }
 
         let bitmapRep = NSBitmapImageRep(cgImage: resizedImage)
-        var quality: Double = 0.85
-        var written = false
-        while quality >= 0.30 {
-            guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: quality]) else {
-                break
-            }
-            try jpegData.write(to: jpegPath)
-            written = true
-            if jpegData.count <= maxImageBytes { break }
-            quality -= 0.10
-        }
-        if !written {
+        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
             throw CaptureError.screencaptureFailed
         }
-        return jpegPath
+
+        // If PNG is over the API limit, fall back to high-quality JPEG.
+        if pngData.count > maxImageBytes {
+            let jpegPath = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
+            guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.90]) else {
+                throw CaptureError.screencaptureFailed
+            }
+            try jpegData.write(to: jpegPath)
+            return jpegPath
+        }
+
+        try pngData.write(to: pngPath)
+        return pngPath
     }
 
     static func featurePrint(for imageURL: URL) -> VNFeaturePrintObservation? {

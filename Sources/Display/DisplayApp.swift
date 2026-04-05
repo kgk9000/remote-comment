@@ -42,7 +42,7 @@ struct DisplayApp: App {
             var seen = Set<String>()
 
             // On startup, process the most recent existing screenshot immediately.
-            let existing = listJpgs(in: dirURL)
+            let existing = listScreenshots(in: dirURL)
             for f in existing { seen.insert(f.lastPathComponent) }
             print("Found \(existing.count) existing files")
 
@@ -54,7 +54,7 @@ struct DisplayApp: App {
             while true {
                 try? await Task.sleep(for: .seconds(2))
 
-                let all = listJpgs(in: dirURL)
+                let all = listScreenshots(in: dirURL)
                 let unseen = all.filter { !seen.contains($0.lastPathComponent) }
                 guard let newest = unseen.last else { continue }
 
@@ -87,12 +87,13 @@ struct DisplayApp: App {
 
     // MARK: - Helpers
 
-    /// List all .jpg files in a directory, sorted chronologically by filename.
-    /// Filenames embed a unix timestamp (screenshot_1234567890.jpg) so
+    /// List all screenshot files in a directory, sorted chronologically by filename.
+    /// Filenames embed a unix timestamp (screenshot_1234567890.png) so
     /// lexicographic order == chronological order.
-    private func listJpgs(in dir: URL) -> [URL] {
-        (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
-            .filter { $0.pathExtension == "jpg" }
+    private func listScreenshots(in dir: URL) -> [URL] {
+        let imageExts: Set<String> = ["jpg", "png"]
+        return (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
+            .filter { imageExts.contains($0.pathExtension.lowercased()) }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             ?? []
     }

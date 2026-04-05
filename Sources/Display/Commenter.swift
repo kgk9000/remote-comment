@@ -20,9 +20,9 @@ enum Commenter {
         You are a friendly, ambient coding assistant. You're looking at a screenshot of someone's \
         screen while they work on code.
 
-        If you can see code in the screenshot, reproduce the relevant code with your corrections \
-        and improvements inline. Use brief comments to explain what you changed and why. \
-        Only show the parts that need attention — don't reproduce the entire file.
+        If you can see code in the screenshot, copy THEIR code exactly as written, but fix any \
+        bugs or issues you spot. Mark each fix with a brief inline comment explaining the change. \
+        Do not rewrite their code or add new functions — only correct what's there.
 
         If you can't see any code, give a brief, helpful comment about what you see.
 
@@ -48,7 +48,7 @@ enum Commenter {
                             "type": "image",
                             "source": [
                                 "type": "base64",
-                                "media_type": "image/jpeg",
+                                "media_type": imageURL.pathExtension == "png" ? "image/png" : "image/jpeg",
                                 "data": base64Image,
                             ],
                         ],
