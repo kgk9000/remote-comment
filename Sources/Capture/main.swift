@@ -40,19 +40,19 @@ struct CaptureMain {
                 let screenshot = try ScreenCapture.takeScreenshot(to: localDir)
                 print("Screenshot: \(screenshot.lastPathComponent)")
 
-                // Skip if screen hasn't changed
-                if let current = ScreenCapture.featurePrint(for: screenshot),
-                   let previous = lastFeaturePrint,
-                   ScreenCapture.isSimilar(current, previous) {
-                    print("Screen unchanged, skipping")
-                    try? FileManager.default.removeItem(at: screenshot)
-                    try? await Task.sleep(for: .seconds(interval))
-                    continue
-                }
-
-                if let fp = ScreenCapture.featurePrint(for: screenshot) {
-                    lastFeaturePrint = fp
-                }
+                // TODO: re-enable similarity check once end-to-end flow is working
+                // if let current = ScreenCapture.featurePrint(for: screenshot),
+                //    let previous = lastFeaturePrint,
+                //    ScreenCapture.isSimilar(current, previous) {
+                //     print("Screen unchanged, skipping")
+                //     try? FileManager.default.removeItem(at: screenshot)
+                //     try? await Task.sleep(for: .seconds(interval))
+                //     continue
+                // }
+                //
+                // if let fp = ScreenCapture.featurePrint(for: screenshot) {
+                //     lastFeaturePrint = fp
+                // }
 
                 // rsync to the Mac Mini
                 try rsync(file: screenshot, host: host, remoteDir: remoteDir)

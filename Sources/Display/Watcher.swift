@@ -7,7 +7,6 @@ final class Watcher {
 
     private let directory: URL
     private var seen: Set<String> = []
-    private var timer: Timer?
 
     init(directory: URL) {
         self.directory = directory
@@ -25,35 +24,27 @@ final class Watcher {
 
         print("Watcher: polling \(directory.path) every 2s")
 
-        // Poll every 2 seconds for new files
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.check()
+        // Use async loop instead of Timer (more reliable without a RunLoop)
+        Task {
+            while true {
+                try? await Task.sleep(for: .seconds(2))
+                check()
+            }
         }
     }
 
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-    }
-
     private func check() {
-        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.creationDateKey])
+        guard let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         else { return }
 
         let jpgs = files
             .filter { $0.pathExtension == "jpg" && !seen.contains($0.lastPathComponent) }
-            .sorted { a, b in
-                let da = (try? a.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                let db = (try? b.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
-                return da < db
-            }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent } // timestamp in name = chronological
 
         if let newest = jpgs.last {
             print("Watcher: new image! \(newest.lastPathComponent) (+\(jpgs.count - 1) others)")
             for f in jpgs { seen.insert(f.lastPathComponent) }
-            DispatchQueue.main.async {
-                self.latestImage = newest
-            }
+            self.latestImage = newest
         }
     }
 }
