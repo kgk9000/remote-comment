@@ -5,7 +5,7 @@ import Vision
 enum ScreenCapture {
     static let maxImageBytes = 4 * 1024 * 1024
     static let maxDimension: CGFloat = 1920
-    static let similarityThreshold: Float = 0.1
+    static let similarityThreshold: Float = 0.05
 
     static func isScreenLocked() -> Bool {
         guard let dict = CGSessionCopyCurrentDictionary() as? [String: Any] else {

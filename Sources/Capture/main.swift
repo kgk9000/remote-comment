@@ -6,7 +6,7 @@ struct CaptureMain {
     static func main() async {
         let args = CommandLine.arguments
         let host = flag(args, name: "--host") ?? "kgk-mini"
-        let interval = Int(flag(args, name: "--interval") ?? "120") ?? 120
+        let interval = Int(flag(args, name: "--interval") ?? "60") ?? 60
         let remoteDir = flag(args, name: "--remote-dir") ?? "~/screenshots"
         let localDir = FileManager.default.temporaryDirectory.appendingPathComponent("remote-comment-captures")
 
@@ -23,9 +23,13 @@ struct CaptureMain {
             print("Warning: could not create remote dir: \(error.localizedDescription)")
         }
 
+        let maxDuration = Int(flag(args, name: "--max-duration") ?? "3600") ?? 3600
+        let startTime = Date()
+        print("  max duration: \(maxDuration)s")
+
         var lastFeaturePrint: VNFeaturePrintObservation?
 
-        while true {
+        while Date().timeIntervalSince(startTime) < Double(maxDuration) {
             if ScreenCapture.isScreenLocked() {
                 print("Screen locked, skipping")
                 try? await Task.sleep(for: .seconds(interval))
@@ -62,6 +66,8 @@ struct CaptureMain {
 
             try? await Task.sleep(for: .seconds(interval))
         }
+
+        print("Max duration reached (\(maxDuration)s), exiting")
     }
 
     static func rsync(file: URL, host: String, remoteDir: String) throws {
