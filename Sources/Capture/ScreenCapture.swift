@@ -18,12 +18,11 @@ enum ScreenCapture {
         return false
     }
 
-    /// Capture a screenshot, resize to fit Claude's vision limits, and save as PNG.
-    /// PNG is lossless — much better than JPEG for reading code text.
+    /// Capture a screenshot. Saves a resized image (for visual context) and
+    /// an OCR text file (for accurate code reading) with matching timestamps.
     static func takeScreenshot(to directory: URL) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let timestamp = Int(Date().timeIntervalSince1970)
-        let pngPath = directory.appendingPathComponent("screenshot_\(timestamp).png")
 
         guard let cgImage = CGWindowListCreateImage(
             CGRect.null,
@@ -34,7 +33,12 @@ enum ScreenCapture {
             throw CaptureError.screencaptureFailed
         }
 
-        // Scale down to maxDimension on the long edge.
+        // OCR the full-resolution image before downscaling.
+        let ocrText = recognizeText(in: cgImage)
+        let txtPath = directory.appendingPathComponent("screenshot_\(timestamp).txt")
+        try ocrText.write(to: txtPath, atomically: true, encoding: .utf8)
+
+        // Downscale for the image file (used as visual context, not for reading code).
         let width = CGFloat(cgImage.width)
         let height = CGFloat(cgImage.height)
         let scale = min(maxDimension / width, maxDimension / height, 1.0)
@@ -60,23 +64,38 @@ enum ScreenCapture {
             throw CaptureError.screencaptureFailed
         }
 
+        // Save as JPEG — the image is just for visual context now, not code reading.
         let bitmapRep = NSBitmapImageRep(cgImage: resizedImage)
-        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+        let imagePath = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
+        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.80]) else {
             throw CaptureError.screencaptureFailed
         }
+        try jpegData.write(to: imagePath)
 
-        // If PNG is over the API limit, fall back to high-quality JPEG.
-        if pngData.count > maxImageBytes {
-            let jpegPath = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
-            guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.90]) else {
-                throw CaptureError.screencaptureFailed
+        return imagePath
+    }
+
+    /// Run OCR on the full-resolution screenshot and return all recognized text.
+    /// Uses the "accurate" recognition level for best results with code.
+    static func recognizeText(in cgImage: CGImage) -> String {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false  // don't "fix" variable names
+
+        let handler = VNImageRequestHandler(cgImage: cgImage)
+        try? handler.perform([request])
+
+        guard let observations = request.results else { return "" }
+
+        // Sort top-to-bottom, then left-to-right to preserve reading order.
+        let sorted = observations.sorted { a, b in
+            if abs(a.boundingBox.origin.y - b.boundingBox.origin.y) > 0.01 {
+                return a.boundingBox.origin.y > b.boundingBox.origin.y  // top first (y is flipped)
             }
-            try jpegData.write(to: jpegPath)
-            return jpegPath
+            return a.boundingBox.origin.x < b.boundingBox.origin.x
         }
 
-        try pngData.write(to: pngPath)
-        return pngPath
+        return sorted.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
     }
 
     static func featurePrint(for imageURL: URL) -> VNFeaturePrintObservation? {
