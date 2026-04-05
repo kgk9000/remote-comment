@@ -54,20 +54,17 @@ struct CaptureMain {
                 //     lastFeaturePrint = fp
                 // }
 
-                // rsync the image and OCR text, then send a .ready marker
-                // so Display knows both files have fully arrived.
+                // rsync image first, then OCR text.
+                // Display triggers on .txt, so by the time it sees the text
+                // file, the image is already there.
                 let txtFile = screenshot.deletingPathExtension().appendingPathExtension("txt")
-                try rsync(files: [screenshot, txtFile], host: host, remoteDir: remoteDir)
-
-                let readyFile = screenshot.deletingPathExtension().appendingPathExtension("ready")
-                try "".write(to: readyFile, atomically: true, encoding: .utf8)
-                try rsync(files: [readyFile], host: host, remoteDir: remoteDir)
+                try rsync(files: [screenshot], host: host, remoteDir: remoteDir)
+                try rsync(files: [txtFile], host: host, remoteDir: remoteDir)
                 print("Sent to \(host):\(remoteDir)/")
 
                 // Clean up local files
                 try? FileManager.default.removeItem(at: screenshot)
                 try? FileManager.default.removeItem(at: txtFile)
-                try? FileManager.default.removeItem(at: readyFile)
             } catch {
                 print("Error: \(error.localizedDescription)")
             }

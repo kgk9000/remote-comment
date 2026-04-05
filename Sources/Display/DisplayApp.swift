@@ -87,16 +87,16 @@ struct DisplayApp: App {
 
     // MARK: - Helpers
 
-    /// List completed screenshots by looking for .ready marker files.
-    /// The .ready file is sent in a separate rsync after the image and OCR text,
-    /// so its presence guarantees both files have fully arrived.
-    /// Returns the corresponding image URLs (.ready → .jpg).
+    /// List completed screenshots by looking for .txt OCR files.
+    /// Capture sends the image first, then the .txt, and waits for each to finish.
+    /// So if the .txt is here, the image is guaranteed to be here too.
+    /// Returns the corresponding image URLs (.txt → .jpg).
     private func listScreenshots(in dir: URL) -> [URL] {
-        let readyFiles = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
-            .filter { $0.pathExtension == "ready" && $0.lastPathComponent.hasPrefix("screenshot_") }
+        let txtFiles = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "txt" && $0.lastPathComponent.hasPrefix("screenshot_") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             ?? []
-        return readyFiles.map { $0.deletingPathExtension().appendingPathExtension("jpg") }
+        return txtFiles.map { $0.deletingPathExtension().appendingPathExtension("jpg") }
     }
 
     /// Resolve the screenshot directory from CLI args, env, or default.
