@@ -64,15 +64,32 @@ struct DisplayApp: App {
 
         // Single loop: poll for new files and send to Claude
         Task {
-            // Seed existing files
             var seen = Set<String>()
+
+            // Process the most recent existing image on startup
             if let files = try? FileManager.default.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil) {
-                for f in files where f.pathExtension == "jpg" {
-                    seen.insert(f.lastPathComponent)
+                let jpgs = files.filter { $0.pathExtension == "jpg" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+                for f in jpgs { seen.insert(f.lastPathComponent) }
+                print("Found \(jpgs.count) existing files")
+
+                if let latest = jpgs.last {
+                    print("Processing latest: \(latest.lastPathComponent)")
+                    await MainActor.run { self.status = "Asking Claude..." }
+                    do {
+                        let c = try await Commenter.comment(on: latest)
+                        await MainActor.run {
+                            self.comment = c
+                            self.status = "Watching \(dir)"
+                        }
+                        print("Comment received")
+                    } catch {
+                        await MainActor.run { self.status = "Error: \(error.localizedDescription)" }
+                        print("Comment error: \(error)")
+                    }
                 }
             }
-            print("Seeded \(seen.count) existing files")
 
+            // Then watch for new arrivals
             while true {
                 try? await Task.sleep(for: .seconds(2))
 
