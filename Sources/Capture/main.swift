@@ -54,12 +54,14 @@ struct CaptureMain {
                 //     lastFeaturePrint = fp
                 // }
 
-                // rsync to the Mac Mini
-                try rsync(file: screenshot, host: host, remoteDir: remoteDir)
+                // rsync both the image and its .txt OCR file to the Mac Mini.
+                let txtFile = screenshot.deletingPathExtension().appendingPathExtension("txt")
+                try rsync(files: [screenshot, txtFile], host: host, remoteDir: remoteDir)
                 print("Sent to \(host):\(remoteDir)/")
 
-                // Clean up local file
+                // Clean up local files
                 try? FileManager.default.removeItem(at: screenshot)
+                try? FileManager.default.removeItem(at: txtFile)
             } catch {
                 print("Error: \(error.localizedDescription)")
             }
@@ -70,10 +72,10 @@ struct CaptureMain {
         print("Max duration reached (\(maxDuration)s), exiting")
     }
 
-    static func rsync(file: URL, host: String, remoteDir: String) throws {
+    static func rsync(files: [URL], host: String, remoteDir: String) throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/rsync")
-        process.arguments = ["-az", file.path, "\(host):\(remoteDir)/"]
+        process.arguments = ["-az"] + files.map(\.path) + ["\(host):\(remoteDir)/"]
 
         let pipe = Pipe()
         process.standardError = pipe

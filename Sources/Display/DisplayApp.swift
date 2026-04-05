@@ -87,15 +87,16 @@ struct DisplayApp: App {
 
     // MARK: - Helpers
 
-    /// List all screenshot files in a directory, sorted chronologically by filename.
-    /// Filenames embed a unix timestamp (screenshot_1234567890.png) so
-    /// lexicographic order == chronological order.
+    /// List all .txt OCR files in a directory, sorted chronologically by filename.
+    /// We trigger on .txt files (not images) because the .txt is written last,
+    /// so its presence means both image and text have arrived.
+    /// Returns the corresponding image URLs (the .txt with extension swapped to .jpg).
     private func listScreenshots(in dir: URL) -> [URL] {
-        let imageExts: Set<String> = ["jpg", "png"]
-        return (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
-            .filter { imageExts.contains($0.pathExtension.lowercased()) }
+        let txtFiles = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "txt" && $0.lastPathComponent.hasPrefix("screenshot_") }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             ?? []
+        return txtFiles.map { $0.deletingPathExtension().appendingPathExtension("jpg") }
     }
 
     /// Resolve the screenshot directory from CLI args, env, or default.
