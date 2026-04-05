@@ -5,7 +5,6 @@ import SwiftUI
 struct DisplayApp: App {
     @State private var comment: Comment?
     @State private var status = "Starting..."
-    @State private var watcher: Watcher?
 
     init() {
         Self.loadDotEnv()
@@ -26,12 +25,10 @@ struct DisplayApp: App {
                 guard parts.count == 2 else { continue }
                 let key = parts[0].trimmingCharacters(in: .whitespaces)
                 var value = parts[1].trimmingCharacters(in: .whitespaces)
-                // Strip surrounding quotes
                 if (value.hasPrefix("\"") && value.hasSuffix("\"")) ||
                    (value.hasPrefix("'") && value.hasSuffix("'")) {
                     value = String(value.dropFirst().dropLast())
                 }
-                // Don't override existing env vars
                 if ProcessInfo.processInfo.environment[key] == nil {
                     setenv(key, value, 0)
                 }
@@ -60,29 +57,46 @@ struct DisplayApp: App {
             ?? NSString("~/screenshots").expandingTildeInPath
 
         let dirURL = URL(fileURLWithPath: dir)
-
-        // Ensure directory exists
         try? FileManager.default.createDirectory(at: dirURL, withIntermediateDirectories: true)
 
-        let w = Watcher(directory: dirURL)
-        self.watcher = w
         status = "Watching \(dir)"
-        w.start()
+        print("Watching \(dir)")
 
-        // Observe new images from the watcher
+        // Single loop: poll for new files and send to Claude
         Task {
-            var lastProcessed: URL?
+            // Seed existing files
+            var seen = Set<String>()
+            if let files = try? FileManager.default.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil) {
+                for f in files where f.pathExtension == "jpg" {
+                    seen.insert(f.lastPathComponent)
+                }
+            }
+            print("Seeded \(seen.count) existing files")
+
             while true {
-                try? await Task.sleep(for: .seconds(1))
-                guard let imageURL = w.latestImage, imageURL != lastProcessed else { continue }
-                lastProcessed = imageURL
-                status = "Asking Claude..."
+                try? await Task.sleep(for: .seconds(2))
+
+                guard let files = try? FileManager.default.contentsOfDirectory(at: dirURL, includingPropertiesForKeys: nil)
+                else { continue }
+
+                let newFiles = files
+                    .filter { $0.pathExtension == "jpg" && !seen.contains($0.lastPathComponent) }
+                    .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+                guard let newest = newFiles.last else { continue }
+
+                print("New image: \(newest.lastPathComponent) (+\(newFiles.count - 1) others)")
+                for f in newFiles { seen.insert(f.lastPathComponent) }
+
+                await MainActor.run { self.status = "Asking Claude..." }
+
                 do {
-                    let c = try await Commenter.comment(on: imageURL)
+                    let c = try await Commenter.comment(on: newest)
                     await MainActor.run {
                         self.comment = c
                         self.status = "Watching \(dir)"
                     }
+                    print("Comment received")
                 } catch {
                     await MainActor.run {
                         self.status = "Error: \(error.localizedDescription)"
