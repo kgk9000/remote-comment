@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -5,6 +6,11 @@ struct DisplayApp: App {
     @State private var comment: Comment?
     @State private var status = "Starting..."
     @State private var watcher: Watcher?
+
+    init() {
+        NSApplication.shared.setActivationPolicy(.regular)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+    }
 
     var body: some Scene {
         WindowGroup {
