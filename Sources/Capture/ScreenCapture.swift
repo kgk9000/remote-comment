@@ -3,7 +3,6 @@ import Foundation
 import Vision
 
 enum ScreenCapture {
-    static let maxImageBytes = 5 * 1024 * 1024  // 5MB API limit
     static let similarityThreshold: Float = 0.05
 
     static func isScreenLocked() -> Bool {
@@ -15,8 +14,8 @@ enum ScreenCapture {
         return false
     }
 
-    /// Find the frontmost app's main window. Returns its ID and bounds.
-    static func frontmostWindow() -> (id: CGWindowID, bounds: CGRect)? {
+    /// Find the frontmost app's main window ID.
+    static func frontmostWindowID() -> CGWindowID? {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
         let pid = frontApp.processIdentifier
 
@@ -29,64 +28,47 @@ enum ScreenCapture {
             guard let ownerPID = info[kCGWindowOwnerPID as String] as? Int32,
                   ownerPID == pid,
                   let windowID = info[kCGWindowNumber as String] as? CGWindowID,
-                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                  let x = boundsDict["X"] as? CGFloat,
-                  let y = boundsDict["Y"] as? CGFloat,
-                  let w = boundsDict["Width"] as? CGFloat,
-                  let h = boundsDict["Height"] as? CGFloat,
+                  let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let w = bounds["Width"] as? CGFloat,
+                  let h = bounds["Height"] as? CGFloat,
                   w > 100 && h > 100
             else { continue }
-            return (id: windowID, bounds: CGRect(x: x, y: y, width: w, height: h))
+            return windowID
         }
         return nil
     }
 
-    /// Capture the frontmost window as a PNG. Falls back to full screen.
+    /// Capture a screenshot using the `screencapture` CLI tool.
+    /// Uses `-l <windowID>` to capture just the frontmost window.
+    /// Falls back to full screen if no frontmost window is found.
     static func takeScreenshot(to directory: URL) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let timestamp = Int(Date().timeIntervalSince1970)
+        let path = directory.appendingPathComponent("screenshot_\(timestamp).png")
 
-        let capturedImage: CGImage
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
 
-        if let window = frontmostWindow(),
-           let windowImage = CGWindowListCreateImage(
-               window.bounds,
-               .optionIncludingWindow,
-               window.id,
-               [.bestResolution]
-           ) {
-            capturedImage = windowImage
-            print("Captured frontmost window (\(windowImage.width)x\(windowImage.height))")
-        } else if let fullScreen = CGWindowListCreateImage(
-            CGRect.null,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.bestResolution]
-        ) {
-            capturedImage = fullScreen
-            print("Captured full screen (no frontmost window found)")
+        if let windowID = frontmostWindowID() {
+            // Capture just the frontmost window: -l windowID, -o no shadow, -x no sound
+            process.arguments = ["-l", "\(windowID)", "-o", "-x", path.path]
+            print("Capturing window \(windowID)")
         } else {
+            // Full screen fallback: -x no sound
+            process.arguments = ["-x", path.path]
+            print("Capturing full screen (no frontmost window)")
+        }
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0,
+              FileManager.default.fileExists(atPath: path.path) else {
             throw CaptureError.screencaptureFailed
         }
 
-        // Try PNG first (lossless, best for code). Fall back to JPEG if over 5MB.
-        let bitmapRep = NSBitmapImageRep(cgImage: capturedImage)
-        let pngData = bitmapRep.representation(using: .png, properties: [:])
-
-        if let pngData, pngData.count <= maxImageBytes {
-            let path = directory.appendingPathComponent("screenshot_\(timestamp).png")
-            try pngData.write(to: path)
-            print("Saved PNG (\(pngData.count / 1024)KB)")
-            return path
-        }
-
-        // PNG too big — use JPEG.
-        guard let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
-            throw CaptureError.screencaptureFailed
-        }
-        let path = directory.appendingPathComponent("screenshot_\(timestamp).jpg")
-        try jpegData.write(to: path)
-        print("Saved JPEG (\(jpegData.count / 1024)KB)")
+        let fileSize = (try? FileManager.default.attributesOfItem(atPath: path.path)[.size] as? Int) ?? 0
+        print("Saved \(path.lastPathComponent) (\(fileSize / 1024)KB)")
         return path
     }
 
