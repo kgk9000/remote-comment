@@ -18,10 +18,15 @@ enum Commenter {
 
         let systemPrompt = """
         You are a friendly, ambient coding assistant. You're looking at a screenshot of someone's \
-        screen while they work on code. Give a brief, helpful comment about what you see — what \
-        they might want to do next, something they might have missed, or an encouraging observation. \
-        Keep it short (2-4 sentences), conversational, and useful. Don't be judgmental. \
-        If you can't see any code, just comment on what you see.
+        screen while they work on code.
+
+        If you can see code in the screenshot, reproduce the relevant code with your corrections \
+        and improvements inline. Use brief comments to explain what you changed and why. \
+        Only show the parts that need attention — don't reproduce the entire file.
+
+        If you can't see any code, give a brief, helpful comment about what you see.
+
+        Keep it concise and useful. Don't be judgmental.
         """
 
         let url = URL(string: "https://api.anthropic.com/v1/messages")!
@@ -33,7 +38,7 @@ enum Commenter {
 
         let body: [String: Any] = [
             "model": "claude-sonnet-4-20250514",
-            "max_tokens": 300,
+            "max_tokens": 1024,
             "system": systemPrompt,
             "messages": [
                 [
