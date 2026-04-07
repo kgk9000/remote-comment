@@ -1,4 +1,4 @@
-.PHONY: help build capture display lint clean
+.PHONY: help build capture lint clean
 
 .DEFAULT_GOAL := help
 
@@ -6,18 +6,13 @@
 help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //' | column -t -s ':'
 
-## build: Build both targets
+## build: Build the capture target
 build:
 	swift build -c release
 
-## capture: Build and run the capture side (laptop)
+## capture: Build and run capture (laptop side)
 capture: build
 	.build/release/Capture $(ARGS)
-
-## display: Build and run the display side (Mac Mini)
-display: build
-	@mkdir -p ~/screenshots
-	.build/release/Display $(ARGS)
 
 ## lint: Check for warnings and errors
 lint:

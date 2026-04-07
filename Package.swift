@@ -10,10 +10,5 @@ let package = Package(
             path: "Sources/Capture",
             swiftSettings: [.unsafeFlags(["-parse-as-library"])]
         ),
-        .executableTarget(
-            name: "Display",
-            path: "Sources/Display",
-            swiftSettings: [.unsafeFlags(["-parse-as-library"])]
-        ),
     ]
 )

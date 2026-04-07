@@ -43,8 +43,10 @@ enum ScreenCapture {
     /// Falls back to full screen if no frontmost window is found.
     static func takeScreenshot(to directory: URL) throws -> URL {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let timestamp = Int(Date().timeIntervalSince1970)
-        let path = directory.appendingPathComponent("screenshot_\(timestamp).png")
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        let timestamp = fmt.string(from: Date())
+        let path = directory.appendingPathComponent("\(timestamp).png")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
