@@ -5,7 +5,7 @@ struct CaptureMain {
     static func main() async {
         let args = CommandLine.arguments
         let host = flag(args, name: "--host") ?? "kgk-mini"
-        let interval = Int(flag(args, name: "--interval") ?? "60") ?? 60
+        let interval = Int(flag(args, name: "--interval") ?? "30") ?? 30
         let remoteDir = flag(args, name: "--remote-dir") ?? "~/snapshots"
         let localDir = FileManager.default.temporaryDirectory.appendingPathComponent("remote-comment-captures")
 
